@@ -1,0 +1,762 @@
+<apex:page standardController="Account"  extensions="SignatureController" id="page" standardStylesheets="false">
+<apex:sectionHeader title="Account" subtitle="{!Account.name}"/>
+<apex:form id="form"> 
+
+<head>
+        <meta name="description" content="Signature Pad - HTML5 canvas based smooth signature drawing using variable width spline interpolation." />
+        <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <style  type="text/css">
+        @page {
+        size: A4;
+        }
+        </style>
+      <style>
+        .button1 {
+    width:170px;
+    padding:5px !important;
+    font-size:15px !important;
+    background:none !important;
+    background-color:#1797C0 !important;
+    color:#fff !important;
+    border-radius:10px;
+    }
+            #wrapper table {
+                border-collapse: collapse;
+                border: 0px #ccc solid;
+                width: 100%;
+            }
+            
+            #wrapper td,
+            #wrapper th {
+                border: 0px #ccc solid;
+                padding: 4px 4px;
+            }
+            
+            #wrapper table + table,
+            #wrapper table + table tr:first-child th,
+            table + table tr:first-child td {
+                border-top: 0;
+            }
+            .m-signature-pad {
+                font-size: 10px;
+                width: 100%;
+                border: 1px solid #ccc;
+                background-color: #fff;
+                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.27), 0 0 40px rgba(0, 0, 0, 0.08) inset;
+                border-radius: 4px;
+            }
+            
+            .m-signature-pad--body {
+                border: 1px solid #ededed;
+                height: 200px;
+            }
+            
+            .m-signature-pad--body canvas {
+                width: 100%;
+                height: 100%;
+                border-radius: 4px;
+                box-shadow: 0 0 5px rgba(0, 0, 0, 0.02) inset;
+            }
+            
+            .m-signature-pad--footer {
+                height: 40px;
+            }
+            
+            .m-signature-pad--footer .description {
+                color: #1797C0;
+                text-align: center;
+                font-size: 14px;
+                widtrh:100%;
+                background-color:#e0edf1;
+                padding:10px 0px;
+            }
+            
+            .m-signature-pad--footer .button {
+                width: 49%;
+                padding: 10px !important;
+                font-size: 18px !important;
+                background: none !important;
+                background-color: #1797C0 !important;
+                color: #fff !important;
+            }
+            
+            .m-signature-pad--footer .button.clear {
+                padding: 10px;
+                float: left;
+            }
+            
+            .m-signature-pad--footer .button.save {
+                padding: 10px;
+            }
+            
+            .clear {
+                clear: both;
+            }
+            
+            @media screen and (max-width: 1024px) {
+                .m-signature-pad {
+                    width: auto;
+                    height: auto;
+                    min-width: 250px;
+                    min-height: 140px;
+                    margin: 5%;
+                }
+                #github {
+                    display: none;
+                }
+            }
+            
+            @media screen and (min-device-width: 768px) and (max-device-width: 1024px) {
+                .m-signature-pad {
+                }
+            }
+            
+            @media screen and (max-height: 320px) {
+                .m-signature-pad--body {
+                }
+                .m-signature-pad--footer {
+                }
+                .m-signature-pad--footer .description {
+                }
+            }
+        </style>
+        <script>
+            (function(root, factory) {
+                if (typeof define === 'function' && define.amd) {
+                    // AMD. Register as an anonymous module unless amdModuleId is set
+                    define([], function() {
+                        return (root['SignaturePad'] = factory());
+                    });
+                } else if (typeof exports === 'object') {
+                    // Node. Does not work with strict CommonJS, but
+                    // only CommonJS-like environments that support module.exports,
+                    // like Node.
+                    module.exports = factory();
+                } else {
+                    root['SignaturePad'] = factory();
+                }
+            }(this, function() {
+
+
+                var SignaturePad = (function(document) {
+                    "use strict";
+
+                    var SignaturePad = function(canvas, options) {
+                        var self = this,
+                            opts = options || {};
+
+                        this.velocityFilterWeight = opts.velocityFilterWeight || 0.7;
+                        this.minWidth = opts.minWidth || 0.5;
+                        this.maxWidth = opts.maxWidth || 2.5;
+                        this.dotSize = opts.dotSize || function() {
+                            return (this.minWidth + this.maxWidth) / 2;
+                        };
+                        this.penColor = opts.penColor || "black";
+                        this.backgroundColor = opts.backgroundColor || "rgba(0,0,0,0)";
+                        this.onEnd = opts.onEnd;
+                        this.onBegin = opts.onBegin;
+                        defaultTool: 'marker';
+                        this._canvas = canvas;
+                        this._ctx = canvas.getContext("2d");
+                        this.clear();
+
+                        // we need add these inline so they are available to unbind while still having
+                        this._handleMouseDown = function(event) {
+                            if (event.which === 1) {
+                                self._mouseButtonDown = true;
+                                self._strokeBegin(event);
+                            }
+                        };
+
+                        this._handleMouseMove = function(event) {
+                            if (self._mouseButtonDown) {
+                                self._strokeUpdate(event);
+                            }
+                        };
+
+                        this._handleMouseUp = function(event) {
+                            if (event.which === 1 && self._mouseButtonDown) {
+                                self._mouseButtonDown = false;
+                                self._strokeEnd(event);
+                            }
+                        };
+
+                        this._handleTouchStart = function(event) {
+                            var touch = event.changedTouches[0];
+                            self._strokeBegin(touch);
+                        };
+
+                        this._handleTouchMove = function(event) {
+                            // Prevent scrolling.
+                            event.preventDefault();
+
+                            var touch = event.changedTouches[0];
+                            self._strokeUpdate(touch);
+                        };
+
+                        this._handleTouchEnd = function(event) {
+                            var wasCanvasTouched = event.target === self._canvas;
+                            if (wasCanvasTouched) {
+                                self._strokeEnd(event);
+                            }
+                        };
+
+                        this._handleMouseEvents();
+                        this._handleTouchEvents();
+                    };
+
+                    SignaturePad.prototype.clear = function() {
+                        var ctx = this._ctx,
+                            canvas = this._canvas;
+
+                        ctx.fillStyle = this.backgroundColor;
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        this._reset();
+                    };
+
+                    SignaturePad.prototype.toDataURL = function(imageType, quality) {
+                        var canvas = this._canvas;
+                        return canvas.toDataURL.apply(canvas, arguments);
+                    };
+
+                    SignaturePad.prototype.fromDataURL = function(dataUrl) {
+                        var self = this,
+                            image = new Image(),
+                            ratio = window.devicePixelRatio || 1,
+                            width = this._canvas.width / ratio,
+                            height = this._canvas.height / ratio;
+
+                        this._reset();
+                        image.src = dataUrl;
+                        image.onload = function() {
+                            self._ctx.drawImage(image, 0, 0, width, height);
+                        };
+                        this._isEmpty = false;
+                    };
+
+                    SignaturePad.prototype._strokeUpdate = function(event) {
+                        var point = this._createPoint(event);
+                        this._addPoint(point);
+                    };
+
+                    SignaturePad.prototype._strokeBegin = function(event) {
+                        this._reset();
+                        this._strokeUpdate(event);
+                        if (typeof this.onBegin === 'function') {
+                            this.onBegin(event);
+                        }
+                    };
+
+                    SignaturePad.prototype._strokeDraw = function(point) {
+                        var ctx = this._ctx,
+                            dotSize = typeof(this.dotSize) === 'function' ? this.dotSize() : this.dotSize;
+
+                        ctx.beginPath();
+                        this._drawPoint(point.x, point.y, dotSize);
+                        ctx.closePath();
+                        ctx.fill();
+                    };
+
+                    SignaturePad.prototype._strokeEnd = function(event) {
+                        var canDrawCurve = this.points.length > 2,
+                            point = this.points[0];
+
+                        if (!canDrawCurve && point) {
+                            this._strokeDraw(point);
+                        }
+                        if (typeof this.onEnd === 'function') {
+                            this.onEnd(event);
+                        }
+                    };
+
+                    SignaturePad.prototype._handleMouseEvents = function() {
+                        this._mouseButtonDown = false;
+
+                        this._canvas.addEventListener("mousedown", this._handleMouseDown);
+                        this._canvas.addEventListener("mousemove", this._handleMouseMove);
+                        document.addEventListener("mouseup", this._handleMouseUp);
+                    };
+
+                    SignaturePad.prototype._handleTouchEvents = function() {
+                        // Pass touch events to canvas element on mobile IE.
+                        this._canvas.style.msTouchAction = 'none';
+
+                        this._canvas.addEventListener("touchstart", this._handleTouchStart);
+                        this._canvas.addEventListener("touchmove", this._handleTouchMove);
+                        document.addEventListener("touchend", this._handleTouchEnd);
+                    };
+
+                    SignaturePad.prototype.on = function() {
+                        this._handleMouseEvents();
+                        this._handleTouchEvents();
+                    };
+
+                    SignaturePad.prototype.off = function() {
+                        this._canvas.removeEventListener("mousedown", this._handleMouseDown);
+                        this._canvas.removeEventListener("mousemove", this._handleMouseMove);
+                        document.removeEventListener("mouseup", this._handleMouseUp);
+
+                        this._canvas.removeEventListener("touchstart", this._handleTouchStart);
+                        this._canvas.removeEventListener("touchmove", this._handleTouchMove);
+                        document.removeEventListener("touchend", this._handleTouchEnd);
+                    };
+
+                    SignaturePad.prototype.isEmpty = function() {
+                        return this._isEmpty;
+                    };
+
+                    SignaturePad.prototype._reset = function() {
+                        this.points = [];
+                        this._lastVelocity = 0;
+                        this._lastWidth = (this.minWidth + this.maxWidth) / 2;
+                        this._isEmpty = true;
+                        this._ctx.fillStyle = this.penColor;
+                    };
+
+                    SignaturePad.prototype._createPoint = function(event) {
+                        var rect = this._canvas.getBoundingClientRect();
+                        return new Point(
+                            event.clientX - rect.left,
+                            event.clientY - rect.top
+                        );
+                    };
+
+                    SignaturePad.prototype._addPoint = function(point) {
+                        var points = this.points,
+                            c2, c3,
+                            curve, tmp;
+
+                        points.push(point);
+
+                        if (points.length > 2) {
+                            // To reduce the initial lag make it work with 3 points
+                            // by copying the first point to the beginning.
+                            if (points.length === 3) points.unshift(points[0]);
+
+                            tmp = this._calculateCurveControlPoints(points[0], points[1], points[2]);
+                            c2 = tmp.c2;
+                            tmp = this._calculateCurveControlPoints(points[1], points[2], points[3]);
+                            c3 = tmp.c1;
+                            curve = new Bezier(points[1], c2, c3, points[2]);
+                            this._addCurve(curve);
+
+                            // Remove the first element from the list,
+                            // so that we always have no more than 4 points in points array.
+                            points.shift();
+                        }
+                    };
+
+                    SignaturePad.prototype._calculateCurveControlPoints = function(s1, s2, s3) {
+                        var dx1 = s1.x - s2.x,
+                            dy1 = s1.y - s2.y,
+                            dx2 = s2.x - s3.x,
+                            dy2 = s2.y - s3.y,
+
+                            m1 = {
+                                x: (s1.x + s2.x) / 2.0,
+                                y: (s1.y + s2.y) / 2.0
+                            },
+                            m2 = {
+                                x: (s2.x + s3.x) / 2.0,
+                                y: (s2.y + s3.y) / 2.0
+                            },
+
+                            l1 = Math.sqrt(dx1 * dx1 + dy1 * dy1),
+                            l2 = Math.sqrt(dx2 * dx2 + dy2 * dy2),
+
+                            dxm = (m1.x - m2.x),
+                            dym = (m1.y - m2.y),
+
+                            k = l2 / (l1 + l2),
+                            cm = {
+                                x: m2.x + dxm * k,
+                                y: m2.y + dym * k
+                            },
+
+                            tx = s2.x - cm.x,
+                            ty = s2.y - cm.y;
+
+                        return {
+                            c1: new Point(m1.x + tx, m1.y + ty),
+                            c2: new Point(m2.x + tx, m2.y + ty)
+                        };
+                    };
+
+                    SignaturePad.prototype._addCurve = function(curve) {
+                        var startPoint = curve.startPoint,
+                            endPoint = curve.endPoint,
+                            velocity, newWidth;
+
+                        velocity = endPoint.velocityFrom(startPoint);
+                        velocity = this.velocityFilterWeight * velocity + (1 - this.velocityFilterWeight) * this._lastVelocity;
+
+                        newWidth = this._strokeWidth(velocity);
+                        this._drawCurve(curve, this._lastWidth, newWidth);
+
+                        this._lastVelocity = velocity;
+                        this._lastWidth = newWidth;
+                    };
+
+                    SignaturePad.prototype._drawPoint = function(x, y, size) {
+                        var ctx = this._ctx;
+
+                        ctx.moveTo(x, y);
+                        ctx.arc(x, y, size, 0, 2 * Math.PI, false);
+                        this._isEmpty = false;
+                    };
+
+                    SignaturePad.prototype._drawCurve = function(curve, startWidth, endWidth) {
+                        var ctx = this._ctx,
+                            widthDelta = endWidth - startWidth,
+                            drawSteps, width, i, t, tt, ttt, u, uu, uuu, x, y;
+
+                        drawSteps = Math.floor(curve.length());
+                        ctx.beginPath();
+                        for (i = 0; i < drawSteps; i++) {
+                            // Calculate the Bezier (x, y) coordinate for this step.
+                            t = i / drawSteps;
+                            tt = t * t;
+                            ttt = tt * t;
+                            u = 1 - t;
+                            uu = u * u;
+                            uuu = uu * u;
+
+                            x = uuu * curve.startPoint.x;
+                            x += 3 * uu * t * curve.control1.x;
+                            x += 3 * u * tt * curve.control2.x;
+                            x += ttt * curve.endPoint.x;
+
+                            y = uuu * curve.startPoint.y;
+                            y += 3 * uu * t * curve.control1.y;
+                            y += 3 * u * tt * curve.control2.y;
+                            y += ttt * curve.endPoint.y;
+
+                            width = startWidth + ttt * widthDelta;
+                            this._drawPoint(x, y, width);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                    };
+
+                    SignaturePad.prototype._strokeWidth = function(velocity) {
+                        return Math.max(this.maxWidth / (velocity + 1), this.minWidth);
+                    };
+
+
+                    var Point = function(x, y, time) {
+                        this.x = x;
+                        this.y = y;
+                        this.time = time || new Date().getTime();
+                    };
+
+                    Point.prototype.velocityFrom = function(start) {
+                        return (this.time !== start.time) ? this.distanceTo(start) / (this.time - start.time) : 1;
+                    };
+
+                    Point.prototype.distanceTo = function(start) {
+                        return Math.sqrt(Math.pow(this.x - start.x, 2) + Math.pow(this.y - start.y, 2));
+                    };
+
+                    var Bezier = function(startPoint, control1, control2, endPoint) {
+                        this.startPoint = startPoint;
+                        this.control1 = control1;
+                        this.control2 = control2;
+                        this.endPoint = endPoint;
+                    };
+
+                    // Returns approximated length.
+                    Bezier.prototype.length = function() {
+                        var steps = 10,
+                            length = 0,
+                            i, t, cx, cy, px, py, xdiff, ydiff;
+
+                        for (i = 0; i <= steps; i++) {
+                            t = i / steps;
+                            cx = this._point(t, this.startPoint.x, this.control1.x, this.control2.x, this.endPoint.x);
+                            cy = this._point(t, this.startPoint.y, this.control1.y, this.control2.y, this.endPoint.y);
+                            if (i > 0) {
+                                xdiff = cx - px;
+                                ydiff = cy - py;
+                                length += Math.sqrt(xdiff * xdiff + ydiff * ydiff);
+                            }
+                            px = cx;
+                            py = cy;
+                        }
+                        return length;
+                    };
+
+                    Bezier.prototype._point = function(t, start, c1, c2, end) {
+                        return start * (1.0 - t) * (1.0 - t) * (1.0 - t) + 3.0 * c1 * (1.0 - t) * (1.0 - t) * t + 3.0 * c2 * (1.0 - t) * t * t + end * t * t * t;
+                    };
+
+                    return SignaturePad;
+                })(document);
+
+                return SignaturePad;
+
+            }));
+        </script>
+        
+         <style>
+        @page {
+            @bottom-Center {
+               content: "Page " counter(page) " of " counter(pages);
+               font-style: bold;
+            }
+        }
+
+        .pageBreak {
+            page-break-after: always
+        }
+
+        .counterReset {
+            -fs-page-sequence: start;
+        }
+
+    </style>  
+    <style>
+    
+  footer {
+    display: center;
+    position: fixed;
+    vertical-align: bottom;
+    width: 100%;
+    bottom: 0;
+  }
+}
+</style>
+    <style> 
+    /* Smartphones (portrait and landscape) ----------- */
+    @media only screen 
+    and (min-device-width : 320px) 
+    and (max-device-width : 480px) {
+    /* Styles */
+    }
+    
+    /* Smartphones (landscape) ----------- */
+    @media only screen 
+    and (min-width : 321px) {
+    /* Styles */ 
+    }
+    
+    /* Smartphones (portrait) ----------- */
+    @media only screen 
+    and (max-width : 320px) {
+    /* Styles */
+    }
+    
+    /* iPads (portrait and landscape) ----------- */
+    @media only screen 
+    and (min-device-width : 768px) 
+    and (max-device-width : 1024px) {
+    /* Styles */
+    }
+    
+    /* iPads (landscape) ----------- */
+    @media only screen 
+    and (min-device-width : 768px) 
+    and (max-device-width : 1024px) 
+    and (orientation : landscape) {
+    /* Styles */
+    }
+    
+    /* iPads (portrait) ----------- */
+    @media only screen 
+    and (min-device-width : 768px) 
+    and (max-device-width : 1024px) 
+    and (orientation : portrait) {
+    /* Styles */
+    }
+    
+    /* Desktops and laptops ----------- */
+    @media only screen 
+    and (min-width : 1224px) {
+    /* Styles */
+    }
+    
+    /* Large screens ----------- */
+    @media only screen 
+    and (min-width : 1824px) {
+    /* Styles */
+    }
+    
+    /* iPhone 4 ----------- */
+    @media
+    only screen and (-webkit-min-device-pixel-ratio : 1.5),
+    only screen and (min-device-pixel-ratio : 1.5) {
+    /* Styles */
+    } 
+   .blockStyle  
+   { border-radius: 25px;
+    border: 4px solid #3890EB;
+    padding: 20px; 
+    width: 200px;
+    height: 550px;
+    background-color:#87cefa;}
+   .WcLabel{
+    font-size:16px;
+    font-family:georgia;
+   } 
+   @media only screen and (max-width: 700px) {
+  body input.btn, body input.btnDisabled, body input.btnCancel {
+     width: 70% !important; 
+    }
+  .paddingclass{
+  padding-top:50% !important;
+  }
+}
+
+  
+   </style>       
+        
+    </head>
+   
+   
+    <div id="signature-pad" class="m-signature-pad">
+            <div class="m-signature-pad--body">
+                <canvas></canvas>
+            </div>
+            <div class="m-signature-pad--footer">
+                <div class="description">Sign above</div>
+                <button class="button clear" data-action="clear">Clear</button>
+              <!--   <button class="button save" data-action="save">Save</button> -->
+                <input type="button" onclick="demo();" class="button save" value="Save"/>
+                <div class="clear"></div>
+            </div>
+            <div class="clear"></div>
+        </div>
+  
+
+           <script>
+        var wrapper = document.getElementById("signature-pad"),
+        clearButton = wrapper.querySelector("[data-action=clear]"),
+        saveButton = wrapper.querySelector("[data-action=save]"),
+        canvas = wrapper.querySelector("canvas"),
+        signaturePad;
+       
+       
+        function resizeCanvas() {
+            var ratio = Math.max(window.devicePixelRatio || 1, 1);
+            canvas.width = canvas.offsetWidth * ratio;
+            canvas.height = canvas.offsetHeight * ratio;
+            canvas.getContext("2d").scale(ratio, ratio);
+        }
+        
+        
+        
+       // window.onresize = resizeCanvas;
+        resizeCanvas();
+        signaturePad = new SignaturePad(canvas);
+     
+    
+        clearButton.addEventListener("click", function(event) {
+            signaturePad.clear();
+        });
+
+        saveButton.addEventListener("click", function(event) {
+            if (signaturePad.isEmpty()) {
+                alert("Please provide signature first.");
+            } 
+            else 
+            {
+                var query2 = window.location.search.substring(1);
+                var vars2 = query2.split("&");
+                var sid;
+                for (var i = 0; i < vars2.length; i++) {
+                    var pair = vars2[i].split("=");
+                     //alert('loop');
+                    if (pair[0] == 'param1') {
+                        sid = pair[1];
+                    }
+                }
+                
+                var sname=document.getElementById('page:form:sign').value; 
+                var strDataURI = signaturePad.toDataURL();
+                var strDataURI2 = strDataURI.replace(/^data:image\/(png|jpg);base64,/, "");
+                window.location.reload();
+                
+                Visualforce.remoting.Manager.invokeAction('{!$RemoteAction.SignatureController.saveSignature}', strDataURI2, sid,sname,
+                function(result, event) {
+
+                }, {
+                escape: true
+                });              
+                }
+                });
+
+                function processResult(result) {
+                    alert(JSON.stringify(result));
+                }
+
+                function findAccounts() {
+                    var nameValue = document.getElementById("accountNameId").value;
+                    alert(nameValue);
+                    signrentalagreement.findAccounts(nameValue, processSearchResult);
+                }
+
+                function processSearchResult(result) {
+                $j = jQuery.noConflict();
+                //$j("#accountList").html("");
+                $j.each(result, function(i, record) {
+                accountId = record.Id;
+                    $j("#recordSigId").html("Record Signature: " + record.Name);
+                });
+                $j("#recordSigId").trigger("update");
+                        }
+                        
+                        
+                        
+                        function demo(){
+                           
+                             if (signaturePad.isEmpty()) {
+                                alert("Please provide signature first.");
+                            } else {
+                                var query2 = window.location.search.substring(1);
+                                var vars2 = query2.split("&");
+                                var sid;
+                                for (var i = 0; i < vars2.length; i++) {
+                                    var pair = vars2[i].split("=");
+                                    //alert('loop');
+                                    if (pair[0] == 'param1') {
+                                        sid = pair[1];
+                                    }
+                                }
+                                
+                                var sname='';<!---document.getElementById('page:form:sign').value;--->
+                            
+                                var strDataURI = signaturePad.toDataURL();
+                                var strDataURI2 = strDataURI.replace(/^data:image\/(png|jpg);base64,/, "");
+                                        
+                                //window.location.reload();
+                              
+                                Visualforce.remoting.Manager.invokeAction('{!$RemoteAction.SignatureController.saveSignature}', strDataURI2, sid,sname,
+                                    function(result, event) { 
+                                        if( (typeof sforce != 'undefined') && sforce && (!!sforce.one) ) {
+                                            alert('YES');
+                                            sforce.one.navigateToURL('/'+sid);
+                                            
+                                        }
+                                        else {
+                                            alert('NO');
+                                            top.location = '/'+sid;    
+                                        }
+                                        alert('Test');
+                                          sforce.one.navigateToURL('/'+sid);
+                                    ;   
+                                    }, {
+                                        escape: true
+                                    }
+                                );
+                        }
+                      }
+                    </script>   
+
+
+</apex:form>
+
+<site:previewAsAdmin />
+
+</apex:page>

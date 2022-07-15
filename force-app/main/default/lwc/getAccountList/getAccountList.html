@@ -1,0 +1,33 @@
+<template>
+    <lightning-card title="Account List" icon-name="custom:custom63">
+            <div class="slds-m-around_medium">
+                <table key={acc.id}>
+                    <tr key={acc.Name}>
+                        <td>
+                            Name
+                        </td>
+                        <td>
+                            Email
+                        </td>
+                    </tr>    
+                <template if:true={accounts.data}>
+                    <template for:each={accounts.data} for:item="acc">
+                        <tr key={acc.Name}>
+                            <td>
+                                {acc.Name}
+                            </td>
+                            <td>
+                                {acc.Phone}
+                            </td>
+                        </tr>    
+                        
+                      
+                    </template>
+                </template>
+                <template if:true={accounts.error}>
+                    {accounts.error}
+                </template>
+            </table>
+            </div>
+        </lightning-card>
+</template>

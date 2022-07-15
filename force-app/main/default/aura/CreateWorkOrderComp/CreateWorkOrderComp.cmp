@@ -1,0 +1,35 @@
+<aura:component controller="CreateWorkOrderCls" implements="force:appHostable,flexipage:availableForAllPageTypes,flexipage:availableForRecordHome,force:hasRecordId,forceCommunity:availableForAllPageTypes,force:lightningQuickAction" access="global">
+
+    <aura:attribute name="WorkOrder" type="Work_Order__c" default="{'sobjectType': 'Work_Order__c',
+                                                          'Name': '',
+                                                          'Description__c': '',
+                                                          'Status__c': '', 
+                                                          'Account__c': '',
+                                                          'Contact__c':''
+                                                          }" access="GLOBAL"/>
+    <article class="slds-card">
+        <div class="slds-m-around--large">
+            <h3>Please enter the staff information.</h3>
+            <div class="slds-form-element slds-is-required" style="margin-top:5px">
+                <label class="slds-form-element__label">
+                <abbr class="slds-required" title="required">*</abbr>Name</label>
+
+                
+                <ui:inputText class="slds-input" value="{!v.WorkOrder.Name}"/>
+            </div>
+           
+                <div class="slds-form-element" style="margin-top:2px">
+                <label class="slds-form-element__label">Description</label>
+                <ui:inputEmail class="slds-input" value="{!v.WorkOrder.Description__c}"/>
+            </div>
+            <div class="slds-form-element" style="margin-top:2px">
+                <label class="slds-form-element__label">Status</label>
+                <ui:inputText class="slds-input" value="{!v.Description.Status__c}"/>
+            </div>       
+            <div class="col-md-4 text-center" style="margin-top:15px">
+                <ui:button class="slds-button slds-button--brand" press="{!c.create}">Create</ui:button>
+            </div>            
+        </div>
+    </article>
+
+</aura:component>
